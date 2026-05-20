@@ -25,8 +25,12 @@ function toTurfPolygon(coordinates) {
 router.post('/save', authMiddleware, async (req, res) => {
   const { distance_m, duration_s, points, coordinates, area_m2 } = req.body;
   const userId = req.user.userId;
+  const io = req.app.get('io');
 
   try {
+    const attackerRow = await pool.query('SELECT username FROM users WHERE id = $1', [userId]);
+    const attackerUsername = attackerRow.rows[0]?.username || 'Inconnu';
+
     const run = await pool.query(
       'INSERT INTO runs (user_id, distance_m, duration_s, points) VALUES ($1, $2, $3, $4) RETURNING id',
       [userId, distance_m, duration_s, points]
@@ -77,7 +81,7 @@ router.post('/save', authMiddleware, async (req, res) => {
       const newPoly = toTurfPolygon(finalCoords);
 
       const others = await pool.query(
-        'SELECT id, user_id, coordinates, points FROM territories WHERE user_id != $1',
+        'SELECT id, user_id, coordinates, points, shield_expires_at FROM territories WHERE user_id != $1',
         [userId]
       );
 
@@ -86,16 +90,38 @@ router.post('/save', authMiddleware, async (req, res) => {
           const oldPoly = toTurfPolygon(t.coordinates);
           const centroid = turf.centroid(oldPoly);
           if (turf.booleanPointInPolygon(centroid, newPoly)) {
-            await pool.query('UPDATE territories SET user_id = $1 WHERE id = $2', [userId, t.id]);
-            await pool.query('UPDATE users SET points = GREATEST(0, points - $1) WHERE id = $2', [t.points, t.user_id]);
+            const shielded = t.shield_expires_at && new Date(t.shield_expires_at) > new Date();
+            // Suppression du territoire (le bouclier est consommé implicitement)
+            await pool.query('DELETE FROM territories WHERE id = $1', [t.id]);
+            if (!shielded) {
+              await pool.query('UPDATE users SET points = GREATEST(0, points - $1) WHERE id = $2', [t.points, t.user_id]);
+            }
             await pool.query('UPDATE users SET points = points + $1 WHERE id = $2', [t.points, userId]);
-            stolen.push({ territoryId: t.id, fromUserId: t.user_id, points: t.points });
+            stolen.push({ territoryId: t.id, fromUserId: t.user_id, points: t.points, shielded });
+            await pool.query(`UPDATE users SET weekly_stolen_count = weekly_stolen_count + 1 WHERE id = $1`, [userId]);
+            if (io) {
+              const room = `user_${t.user_id}`;
+              const sockets = await io.in(room).fetchSockets();
+              console.log(`[SOCKET] emit territory_stolen → room ${room}, sockets connectés: ${sockets.length}`);
+              io.to(room).emit('territory_stolen', {
+                fromUsername: attackerUsername,
+                points: t.points,
+                shielded,
+              });
+            }
           }
         } catch {}
       }
     }
 
     await pool.query('UPDATE users SET points = points + $1 WHERE id = $2', [points, userId]);
+    await pool.query(
+      `UPDATE users SET
+        weekly_territory_points = weekly_territory_points + $1,
+        weekly_distance_m = weekly_distance_m + $2
+       WHERE id = $3`,
+      [points, distance_m || 0, userId]
+    );
 
     res.json({ success: true, runId: run.rows[0].id, stolen });
   } catch (err) {
@@ -108,7 +134,7 @@ router.get('/me', authMiddleware, async (req, res) => {
   const userId = req.user.userId;
   try {
     const territories = await pool.query(
-      'SELECT id, coordinates, area_m2, points, created_at FROM territories WHERE user_id = $1 ORDER BY created_at DESC',
+      'SELECT id, coordinates, area_m2, points, shield_type, shield_expires_at, created_at FROM territories WHERE user_id = $1 ORDER BY created_at DESC',
       [userId]
     );
     const stats = await pool.query(
@@ -125,7 +151,7 @@ router.get('/me', authMiddleware, async (req, res) => {
 router.get('/all', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT t.id, t.user_id, t.coordinates, t.area_m2, t.points, u.username
+      `SELECT t.id, t.user_id, t.coordinates, t.area_m2, t.points, t.shield_type, t.shield_expires_at, u.username
        FROM territories t
        JOIN users u ON u.id = t.user_id
        ORDER BY t.created_at DESC`
