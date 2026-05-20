@@ -53,6 +53,28 @@ async function start() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS territories (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(id),
+      coordinates JSONB NOT NULL,
+      area_m2 FLOAT NOT NULL,
+      points INTEGER NOT NULL,
+      shield_type VARCHAR(5),
+      shield_expires_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS runs (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(id),
+      distance_m FLOAT,
+      duration_s INTEGER,
+      points INTEGER,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS shield_24h INTEGER DEFAULT 0`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS shield_48h INTEGER DEFAULT 0`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS shield_72h INTEGER DEFAULT 0`);
