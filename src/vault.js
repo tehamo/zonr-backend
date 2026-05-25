@@ -144,17 +144,6 @@ router.post('/claim', authMiddleware, async (req, res) => {
   }
 });
 
-// Endpoint temporaire admin
-router.post('/admin/give-skin', async (req, res) => {
-  const { secret, username, skin } = req.body;
-  if (secret !== 'zonr_admin_2024') return res.status(403).json({ error: 'Forbidden' });
-  try {
-    await pool.query(`UPDATE users SET skins = array_append(skins, $1) WHERE username = $2`, [skin, username]);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 router.post('/activate-skin', authMiddleware, async (req, res) => {
   const { skin } = req.body;
