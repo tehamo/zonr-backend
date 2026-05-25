@@ -28,6 +28,16 @@ app.use('/vault', vaultRouter);
 
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
+app.get('/debug-env', (_, res) => {
+  const jwt = require('jsonwebtoken');
+  try {
+    const token = jwt.sign({ test: 1 }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN });
+    res.json({ jwt_ok: true, secret_set: !!process.env.JWT_SECRET, expires_in: process.env.JWT_EXPIRES_IN });
+  } catch (e) {
+    res.json({ jwt_ok: false, secret_set: !!process.env.JWT_SECRET, expires_in: process.env.JWT_EXPIRES_IN, error: e.message });
+  }
+});
+
 io.on('connection', (socket) => {
   socket.on('join', (token) => {
     try {
