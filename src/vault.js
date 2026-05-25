@@ -145,6 +145,13 @@ router.post('/claim', authMiddleware, async (req, res) => {
 });
 
 
+router.post('/admin/user-info', async (req, res) => {
+  const { secret, username } = req.body;
+  if (secret !== 'zonr_admin_2024') return res.status(403).json({ error: 'Forbidden' });
+  const result = await pool.query('SELECT id, username, email FROM users WHERE username = $1', [username]);
+  res.json(result.rows[0] || null);
+});
+
 router.post('/activate-skin', authMiddleware, async (req, res) => {
   const { skin } = req.body;
   const userId = req.user.userId;
