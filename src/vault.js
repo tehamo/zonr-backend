@@ -145,12 +145,6 @@ router.post('/claim', authMiddleware, async (req, res) => {
 });
 
 
-router.post('/admin/grant-skin', async (req, res) => {
-  const { secret, userId, skin } = req.body;
-  if (secret !== 'zonr_admin_2024') return res.status(403).json({ error: 'Forbidden' });
-  await pool.query(`UPDATE users SET skins = array_append(skins, $1) WHERE id = $2 AND NOT ($1 = ANY(skins))`, [skin, userId]);
-  res.json({ success: true });
-});
 
 router.post('/activate-skin', authMiddleware, async (req, res) => {
   const { skin } = req.body;
