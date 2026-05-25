@@ -30,13 +30,13 @@ router.post('/register', async (req, res) => {
 
     const user = result.rows[0];
     const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, {
-      expiresIn: process.env.JWT_EXPIRES_IN,
+      expiresIn: process.env.JWT_EXPIRES_IN || '7d',
     });
 
     res.status(201).json({ token, user });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Erreur serveur', detail: err.message });
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
@@ -59,7 +59,7 @@ router.post('/login', async (req, res) => {
     if (!valid) return res.status(401).json({ error: 'Email ou mot de passe incorrect' });
 
     const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, {
-      expiresIn: process.env.JWT_EXPIRES_IN,
+      expiresIn: process.env.JWT_EXPIRES_IN || '7d',
     });
 
     res.json({ token, user: { id: user.id, username: user.username, email: user.email } });
