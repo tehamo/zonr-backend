@@ -81,7 +81,7 @@ router.post('/save', authMiddleware, async (req, res) => {
       const newPoly = toTurfPolygon(finalCoords);
 
       const others = await pool.query(
-        'SELECT id, user_id, coordinates, points, shield_expires_at FROM territories WHERE user_id != $1',
+        'SELECT id, user_id, coordinates, points, shield_expires_at, created_at FROM territories WHERE user_id != $1',
         [userId]
       );
 
@@ -91,18 +91,23 @@ router.post('/save', authMiddleware, async (req, res) => {
           const centroid = turf.centroid(oldPoly);
           if (turf.booleanPointInPolygon(centroid, newPoly)) {
             const shielded = t.shield_expires_at && new Date(t.shield_expires_at) > new Date();
-            // Suppression du territoire (le bouclier est consommé implicitement)
+
+            // Bonus d'âge : +10% par jour entier, plafonné à +100% (×2 max)
+            const ageDays = Math.floor((Date.now() - new Date(t.created_at).getTime()) / 86400000);
+            const ageMultiplier = 1 + Math.min(ageDays * 0.1, 1.0);
+            const totalPoints = Math.round(t.points * ageMultiplier);
+            const bonusPoints = totalPoints - t.points;
+
             await pool.query('DELETE FROM territories WHERE id = $1', [t.id]);
             if (!shielded) {
               await pool.query('UPDATE users SET points = GREATEST(0, points - $1) WHERE id = $2', [t.points, t.user_id]);
             }
-            await pool.query('UPDATE users SET points = points + $1 WHERE id = $2', [t.points, userId]);
-            stolen.push({ territoryId: t.id, fromUserId: t.user_id, points: t.points, shielded });
+            await pool.query('UPDATE users SET points = points + $1 WHERE id = $2', [totalPoints, userId]);
+            stolen.push({ territoryId: t.id, fromUserId: t.user_id, points: t.points, bonusPoints, ageDays, shielded });
             await pool.query(`UPDATE users SET weekly_stolen_count = weekly_stolen_count + 1 WHERE id = $1`, [userId]);
             if (io) {
               const room = `user_${t.user_id}`;
               const sockets = await io.in(room).fetchSockets();
-              console.log(`[SOCKET] emit territory_stolen → room ${room}, sockets connectés: ${sockets.length}`);
               io.to(room).emit('territory_stolen', {
                 fromUsername: attackerUsername,
                 points: t.points,
