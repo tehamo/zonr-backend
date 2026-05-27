@@ -90,22 +90,34 @@ async function start() {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vault_choice_made BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS active_skin VARCHAR(20) DEFAULT NULL`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS monthly_points INTEGER DEFAULT 0`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vault_snapshot_territoire INTEGER DEFAULT 0`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vault_snapshot_invasion INTEGER DEFAULT 0`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vault_snapshot_endurance INTEGER DEFAULT 0`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vault_revealed BOOLEAN DEFAULT false`);
   // Backfill : si monthly_points est 0 mais points > 0, on synchronise
   await pool.query(`UPDATE users SET monthly_points = points WHERE monthly_points = 0 AND points > 0`);
   console.log('Table users prête');
 
   // Reset vault chaque dimanche à 3h
   cron.schedule('0 3 * * 0', async () => {
+    // 1. Snapshot des stats de la semaine → utilisé pour les récompenses
+    await pool.query(`UPDATE users SET
+      vault_snapshot_territoire = weekly_territory_points,
+      vault_snapshot_invasion = weekly_stolen_count,
+      vault_snapshot_endurance = weekly_distance_m,
+      vault_revealed = true,
+      vault_choice_made = false,
+      weekly_claimed_territoire = 0,
+      weekly_claimed_invasion = 0,
+      weekly_claimed_endurance = 0
+    `);
+    // 2. Reset des stats hebdo pour la nouvelle semaine
     await pool.query(`UPDATE users SET
       weekly_territory_points = 0,
       weekly_stolen_count = 0,
-      weekly_distance_m = 0,
-      weekly_claimed_territoire = 0,
-      weekly_claimed_invasion = 0,
-      weekly_claimed_endurance = 0,
-      vault_choice_made = false
+      weekly_distance_m = 0
     `);
-    console.log('[VAULT] Reset hebdomadaire effectué');
+    console.log('[VAULT] Snapshot pris + reset hebdomadaire effectué');
   }, { timezone: 'Europe/Paris' });
 
   // Reset classement mensuel le 1er du mois à 3h

@@ -41,34 +41,48 @@ router.get('/progress', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT weekly_territory_points, weekly_stolen_count, weekly_distance_m,
+              vault_snapshot_territoire, vault_snapshot_invasion, vault_snapshot_endurance,
               weekly_claimed_territoire, weekly_claimed_invasion, weekly_claimed_endurance,
-              vault_choice_made, skins, shield_24h, shield_48h, shield_72h FROM users WHERE id = $1`,
+              vault_choice_made, vault_revealed, skins, shield_24h, shield_48h, shield_72h
+       FROM users WHERE id = $1`,
       [userId]
     );
     const u = result.rows[0];
 
-    // Calculer tous les paliers débloqués mais non encore choisis
+    const vaultRevealed = u.vault_revealed || false;
+
+    // Paliers débloqués basés sur le SNAPSHOT (pas les stats courantes)
     const unlockedSlots = [];
-    for (const [cat, tiers] of Object.entries(PALIERS)) {
-      const statVal = cat === 'territoire' ? u.weekly_territory_points
-                    : cat === 'invasion'   ? u.weekly_stolen_count
-                    : u.weekly_distance_m;
-      const claimed = cat === 'territoire' ? u.weekly_claimed_territoire
-                    : cat === 'invasion'   ? u.weekly_claimed_invasion
-                    : u.weekly_claimed_endurance;
-      for (const tier of tiers) {
-        if ((statVal || 0) >= tier.threshold && (claimed || 0) < tier.palier) {
-          unlockedSlots.push({ category: cat, palier: tier.palier, reward: tier.reward });
+    if (vaultRevealed) {
+      for (const [cat, tiers] of Object.entries(PALIERS)) {
+        const snapVal = cat === 'territoire' ? u.vault_snapshot_territoire
+                      : cat === 'invasion'   ? u.vault_snapshot_invasion
+                      : u.vault_snapshot_endurance;
+        const claimed = cat === 'territoire' ? u.weekly_claimed_territoire
+                      : cat === 'invasion'   ? u.weekly_claimed_invasion
+                      : u.weekly_claimed_endurance;
+        for (const tier of tiers) {
+          if ((snapVal || 0) >= tier.threshold && (claimed || 0) < tier.palier) {
+            unlockedSlots.push({ category: cat, palier: tier.palier, reward: tier.reward });
+          }
         }
       }
     }
 
     res.json({
+      // Stats courantes = progression de la semaine en cours (toujours visible)
       territoire: { value: u.weekly_territory_points || 0, claimed: u.weekly_claimed_territoire || 0 },
       invasion:   { value: u.weekly_stolen_count || 0,     claimed: u.weekly_claimed_invasion || 0 },
       endurance:  { value: u.weekly_distance_m || 0,       claimed: u.weekly_claimed_endurance || 0 },
+      // Snapshot = ce sur quoi les récompenses sont basées
+      snapshot: {
+        territoire: u.vault_snapshot_territoire || 0,
+        invasion:   u.vault_snapshot_invasion || 0,
+        endurance:  u.vault_snapshot_endurance || 0,
+      },
       unlockedSlots,
       vaultChoiceMade: u.vault_choice_made || false,
+      vaultRevealed,
       skins: u.skins || [],
       paliers: PALIERS,
     });
@@ -88,19 +102,20 @@ router.post('/claim', authMiddleware, async (req, res) => {
   if (!tier) return res.status(400).json({ error: 'Palier invalide' });
 
   const claimedCol = `weekly_claimed_${category}`;
-  const statCol = category === 'territoire' ? 'weekly_territory_points'
-                : category === 'invasion'   ? 'weekly_stolen_count'
-                : 'weekly_distance_m';
+  const snapshotCol = category === 'territoire' ? 'vault_snapshot_territoire'
+                    : category === 'invasion'   ? 'vault_snapshot_invasion'
+                    : 'vault_snapshot_endurance';
 
   try {
     const result = await pool.query(
-      `SELECT ${statCol}, ${claimedCol}, vault_choice_made,
+      `SELECT ${snapshotCol}, ${claimedCol}, vault_choice_made, vault_revealed,
               shield_24h, shield_48h, shield_72h FROM users WHERE id = $1`, [userId]
     );
     const u = result.rows[0];
 
+    if (!u.vault_revealed) return res.status(400).json({ error: 'Le vault s\'ouvre le dimanche' });
     if (u.vault_choice_made) return res.status(400).json({ error: 'Tu as déjà choisi ta récompense cette semaine' });
-    if ((u[statCol] || 0) < tier.threshold) return res.status(400).json({ error: 'Palier non atteint' });
+    if ((u[snapshotCol] || 0) < tier.threshold) return res.status(400).json({ error: 'Palier non atteint' });
     if ((u[claimedCol] || 0) >= palier) return res.status(400).json({ error: 'Déjà réclamé' });
 
     const { reward } = tier;
