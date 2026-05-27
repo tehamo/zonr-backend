@@ -11,6 +11,7 @@ const runsRouter = require('./runs');
 const leaderboardRouter = require('./leaderboard');
 const shieldsRouter = require('./shields');
 const vaultRouter = require('./vault');
+const chatRouter = require('./chat');
 const pool = require('./db');
 
 const app = express();
@@ -25,6 +26,7 @@ app.use('/runs', runsRouter);
 app.use('/leaderboard', leaderboardRouter);
 app.use('/shields', shieldsRouter);
 app.use('/vault', vaultRouter);
+app.use('/chat', chatRouter);
 
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
@@ -34,6 +36,15 @@ io.on('connection', (socket) => {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       socket.join(`user_${decoded.userId}`);
     } catch {}
+  });
+  socket.on('join_chat', ({ token, channel }) => {
+    try {
+      jwt.verify(token, process.env.JWT_SECRET);
+      if (channel && channel.length <= 50) socket.join(`chat_${channel}`);
+    } catch {}
+  });
+  socket.on('leave_chat', ({ channel }) => {
+    if (channel) socket.leave(`chat_${channel}`);
   });
 });
 
@@ -123,6 +134,16 @@ async function start() {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vault_skin_er VARCHAR(20) DEFAULT 'aurora'`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vault_skin_ee VARCHAR(20) DEFAULT 'lightning'`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS push_token TEXT DEFAULT NULL`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      channel VARCHAR(50) NOT NULL,
+      text TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS messages_channel_idx ON messages(channel, created_at DESC)`);
   // Générer des skins aléatoires pour les joueurs existants (colonnes à valeur par défaut)
   const existingUsers = await pool.query(`SELECT id FROM users WHERE vault_skin_tc = 'steel'`);
   for (const u of existingUsers.rows) {
