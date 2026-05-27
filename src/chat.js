@@ -65,7 +65,7 @@ router.post('/:channel', authMiddleware, async (req, res) => {
        RETURNING id, text, created_at`,
       [userId, channel, text.trim()]
     );
-    const msg = { ...result.rows[0], username };
+    const msg = { ...result.rows[0], username, channel };
 
     // Broadcast via socket.io
     const io = req.app.get('io');
