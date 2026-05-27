@@ -90,6 +90,8 @@ async function start() {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vault_choice_made BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS active_skin VARCHAR(20) DEFAULT NULL`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS monthly_points INTEGER DEFAULT 0`);
+  // Backfill : si monthly_points est 0 mais points > 0, on synchronise
+  await pool.query(`UPDATE users SET monthly_points = points WHERE monthly_points = 0 AND points > 0`);
   console.log('Table users prête');
 
   // Reset vault chaque dimanche à 3h

@@ -18,13 +18,9 @@ function authMiddleware(req, res, next) {
 
 router.get('/', authMiddleware, async (req, res) => {
   const userId = req.user.userId;
-  const type = req.query.type || 'monthly'; // 'monthly' | 'weekly'
-
-  const scoreCol = type === 'weekly' ? 'weekly_territory_points' : 'monthly_points';
-
   try {
     const result = await pool.query(
-      `SELECT id, username, ${scoreCol} as points FROM users ORDER BY ${scoreCol} DESC LIMIT 50`
+      `SELECT id, username, monthly_points as points FROM users ORDER BY monthly_points DESC LIMIT 50`
     );
 
     const players = result.rows.map((u, i) => ({
@@ -40,11 +36,11 @@ router.get('/', authMiddleware, async (req, res) => {
       me = players[myIndex];
     } else {
       const myRow = await pool.query(
-        `SELECT id, username, ${scoreCol} as points FROM users WHERE id = $1`, [userId]
+        `SELECT id, username, monthly_points as points FROM users WHERE id = $1`, [userId]
       );
       if (myRow.rows.length > 0) {
         const countAbove = await pool.query(
-          `SELECT COUNT(*) FROM users WHERE ${scoreCol} > $1`, [myRow.rows[0].points]
+          `SELECT COUNT(*) FROM users WHERE monthly_points > $1`, [myRow.rows[0].points]
         );
         me = {
           rank: parseInt(countAbove.rows[0].count) + 1,
@@ -55,7 +51,7 @@ router.get('/', authMiddleware, async (req, res) => {
       }
     }
 
-    res.json({ players, me, type });
+    res.json({ players, me });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
