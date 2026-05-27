@@ -151,7 +151,7 @@ router.get('/me', authMiddleware, async (req, res) => {
 router.get('/all', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT t.id, t.user_id, t.coordinates, t.area_m2, t.points, t.shield_type, t.shield_expires_at, u.username
+      `SELECT t.id, t.user_id, t.coordinates, t.area_m2, t.points, t.shield_type, t.shield_expires_at, u.username, u.active_skin
        FROM territories t
        JOIN users u ON u.id = t.user_id
        ORDER BY t.created_at DESC`
