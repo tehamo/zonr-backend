@@ -42,6 +42,28 @@ app.set('io', io);
 
 const PORT = process.env.PORT || 3000;
 
+const COMMON_SKINS = ['steel','white','ember','lime','sol','rouge','dots','lavender'];
+const RARE_SKINS   = ['ocean','fire','aurora','sunset','ghost','lava','pulse'];
+const EPIC_SKINS   = ['prism','lightning','rainbow','tron','phoenix'];
+
+function pickRandomSkins() {
+  const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+  const pickDiff = (arr, exclude) => {
+    let s; do { s = pick(arr); } while (s === exclude); return s;
+  };
+  const tc = pick(COMMON_SKINS); // territoire commun
+  const tr = pick(RARE_SKINS);   // territoire rare
+  const te = pick(EPIC_SKINS);   // territoire épique
+  return {
+    vault_skin_tc: tc,
+    vault_skin_tr: tr,
+    vault_skin_te: te,
+    vault_skin_ec: pickDiff(COMMON_SKINS, tc), // endurance commun ≠ territoire commun
+    vault_skin_er: pickDiff(RARE_SKINS, tr),   // endurance rare ≠ territoire rare
+    vault_skin_ee: pick(EPIC_SKINS),           // endurance épique (5 skins, peut répéter)
+  };
+}
+
 async function start() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
@@ -94,13 +116,28 @@ async function start() {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vault_snapshot_invasion INTEGER DEFAULT 0`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vault_snapshot_endurance INTEGER DEFAULT 0`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vault_revealed BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vault_skin_tc VARCHAR(20) DEFAULT 'steel'`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vault_skin_tr VARCHAR(20) DEFAULT 'ocean'`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vault_skin_te VARCHAR(20) DEFAULT 'prism'`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vault_skin_ec VARCHAR(20) DEFAULT 'lime'`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vault_skin_er VARCHAR(20) DEFAULT 'aurora'`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vault_skin_ee VARCHAR(20) DEFAULT 'lightning'`);
+  // Générer des skins aléatoires pour les joueurs existants (colonnes à valeur par défaut)
+  const existingUsers = await pool.query(`SELECT id FROM users WHERE vault_skin_tc = 'steel'`);
+  for (const u of existingUsers.rows) {
+    const s = pickRandomSkins();
+    await pool.query(`UPDATE users SET vault_skin_tc=$1, vault_skin_tr=$2, vault_skin_te=$3,
+      vault_skin_ec=$4, vault_skin_er=$5, vault_skin_ee=$6 WHERE id=$7`,
+      [s.vault_skin_tc, s.vault_skin_tr, s.vault_skin_te, s.vault_skin_ec, s.vault_skin_er, s.vault_skin_ee, u.id]);
+  }
+
   // Backfill : si monthly_points est 0 mais points > 0, on synchronise
   await pool.query(`UPDATE users SET monthly_points = points WHERE monthly_points = 0 AND points > 0`);
   console.log('Table users prête');
 
   // Reset vault chaque dimanche à 3h
   cron.schedule('0 3 * * 0', async () => {
-    // 1. Snapshot des stats de la semaine → utilisé pour les récompenses
+    // 1. Snapshot des stats + révélation vault
     await pool.query(`UPDATE users SET
       vault_snapshot_territoire = weekly_territory_points,
       vault_snapshot_invasion = weekly_stolen_count,
@@ -111,13 +148,21 @@ async function start() {
       weekly_claimed_invasion = 0,
       weekly_claimed_endurance = 0
     `);
-    // 2. Reset des stats hebdo pour la nouvelle semaine
+    // 2. Reset des stats hebdo
     await pool.query(`UPDATE users SET
       weekly_territory_points = 0,
       weekly_stolen_count = 0,
       weekly_distance_m = 0
     `);
-    console.log('[VAULT] Snapshot pris + reset hebdomadaire effectué');
+    // 3. Nouveaux skins aléatoires par joueur pour la semaine suivante
+    const users = await pool.query('SELECT id FROM users');
+    for (const u of users.rows) {
+      const s = pickRandomSkins();
+      await pool.query(`UPDATE users SET vault_skin_tc=$1, vault_skin_tr=$2, vault_skin_te=$3,
+        vault_skin_ec=$4, vault_skin_er=$5, vault_skin_ee=$6 WHERE id=$7`,
+        [s.vault_skin_tc, s.vault_skin_tr, s.vault_skin_te, s.vault_skin_ec, s.vault_skin_er, s.vault_skin_ee, u.id]);
+    }
+    console.log(`[VAULT] Reset + ${users.rows.length} tirages aléatoires effectués`);
   }, { timezone: 'Europe/Paris' });
 
   // Reset classement mensuel le 1er du mois à 3h

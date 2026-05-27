@@ -16,23 +16,45 @@ function authMiddleware(req, res, next) {
   }
 }
 
-const PALIERS = {
-  territoire: [
-    { palier: 1, threshold: 2000, reward: { type: 'skin', skin: 'steel',   label: 'Gris Acier',  color: '#94a3b8' } },
-    { palier: 2, threshold: 3500, reward: { type: 'skin', skin: 'ember',   label: 'Ember',       color: '#f97316' } },
-    { palier: 3, threshold: 6500, reward: { type: 'skin', skin: 'ocean',   label: 'Ocean',       color: '#22d3ee' } },
-  ],
-  invasion: [
-    { palier: 1, threshold: 2,  reward: { type: 'shield', shield: '24h', label: 'Bouclier 24h' } },
-    { palier: 2, threshold: 6,  reward: { type: 'shield', shield: '48h', label: 'Bouclier 48h' } },
-    { palier: 3, threshold: 10, reward: { type: 'shield', shield: '72h', label: 'Bouclier 72h' } },
-  ],
-  endurance: [
-    { palier: 1, threshold: 5000,  reward: { type: 'skin', skin: 'lime',    label: 'Lime',    color: '#4ade80' } },
-    { palier: 2, threshold: 15000, reward: { type: 'skin', skin: 'lavender',label: 'Lavande', color: '#a78bfa' } },
-    { palier: 3, threshold: 30000, reward: { type: 'skin', skin: 'aurora',  label: 'Aurora',  color: '#10b981' } },
-  ],
+const SKIN_INFO = {
+  steel: { label: 'Gris Acier', color: '#94a3b8' }, white:    { label: 'Blanc Pur',    color: '#e2e8f0' },
+  ember: { label: 'Ember',      color: '#f97316' }, lime:     { label: 'Lime',         color: '#4ade80' },
+  sol:   { label: 'Soleil',     color: '#fbbf24' }, rouge:    { label: 'Rouge',        color: '#f43f5e' },
+  dots:  { label: 'Pointillé',  color: '#60a5fa' }, lavender: { label: 'Lavande',      color: '#a78bfa' },
+  ocean: { label: 'Ocean',      color: '#22d3ee' }, fire:     { label: 'Feu',          color: '#f97316' },
+  aurora:{ label: 'Aurora',     color: '#10b981' }, sunset:   { label: 'Sunset',       color: '#ec4899' },
+  ghost: { label: 'Ghost',      color: '#f8fafc' }, lava:     { label: 'Lava',         color: '#ef4444' },
+  pulse: { label: 'Pulse',      color: '#3b82f6' }, prism:    { label: 'Prisme',       color: '#c084fc' },
+  lightning: { label: 'Lightning', color: '#fbbf24' }, rainbow: { label: 'Arc-en-ciel', color: '#818cf8' },
+  tron:  { label: 'Tron',       color: '#38bdf8' }, phoenix:  { label: 'Phoenix',      color: '#f97316' },
 };
+
+function skinReward(id) {
+  const info = SKIN_INFO[id] || { label: id, color: '#888' };
+  return { type: 'skin', skin: id, label: info.label, color: info.color };
+}
+
+const INVASION_PALIERS = [
+  { palier: 1, threshold: 2,  reward: { type: 'shield', shield: '24h', label: 'Bouclier 24h' } },
+  { palier: 2, threshold: 6,  reward: { type: 'shield', shield: '48h', label: 'Bouclier 48h' } },
+  { palier: 3, threshold: 10, reward: { type: 'shield', shield: '72h', label: 'Bouclier 72h' } },
+];
+
+function buildPaliers(u) {
+  return {
+    territoire: [
+      { palier: 1, threshold: 2000,  reward: skinReward(u.vault_skin_tc) },
+      { palier: 2, threshold: 3500,  reward: skinReward(u.vault_skin_tr) },
+      { palier: 3, threshold: 6500,  reward: skinReward(u.vault_skin_te) },
+    ],
+    invasion: INVASION_PALIERS,
+    endurance: [
+      { palier: 1, threshold: 5000,  reward: skinReward(u.vault_skin_ec) },
+      { palier: 2, threshold: 15000, reward: skinReward(u.vault_skin_er) },
+      { palier: 3, threshold: 30000, reward: skinReward(u.vault_skin_ee) },
+    ],
+  };
+}
 
 const SHIELD_MAX = { '24h': 3, '48h': 2, '72h': 1 };
 
@@ -43,12 +65,13 @@ router.get('/progress', authMiddleware, async (req, res) => {
       `SELECT weekly_territory_points, weekly_stolen_count, weekly_distance_m,
               vault_snapshot_territoire, vault_snapshot_invasion, vault_snapshot_endurance,
               weekly_claimed_territoire, weekly_claimed_invasion, weekly_claimed_endurance,
-              vault_choice_made, vault_revealed, skins, shield_24h, shield_48h, shield_72h
+              vault_choice_made, vault_revealed, skins, shield_24h, shield_48h, shield_72h,
+              vault_skin_tc, vault_skin_tr, vault_skin_te, vault_skin_ec, vault_skin_er, vault_skin_ee
        FROM users WHERE id = $1`,
       [userId]
     );
     const u = result.rows[0];
-
+    const PALIERS = buildPaliers(u);
     const vaultRevealed = u.vault_revealed || false;
 
     // Paliers débloqués basés sur le SNAPSHOT (pas les stats courantes)
@@ -97,6 +120,10 @@ router.post('/claim', authMiddleware, async (req, res) => {
   const { category, palier } = req.body;
   const userId = req.user.userId;
 
+  const userRow = await pool.query(
+    `SELECT vault_skin_tc, vault_skin_tr, vault_skin_te, vault_skin_ec, vault_skin_er, vault_skin_ee FROM users WHERE id = $1`, [userId]
+  );
+  const PALIERS = buildPaliers(userRow.rows[0]);
   if (!PALIERS[category]) return res.status(400).json({ error: 'Catégorie invalide' });
   const tier = PALIERS[category].find(p => p.palier === palier);
   if (!tier) return res.status(400).json({ error: 'Palier invalide' });
