@@ -3,6 +3,19 @@ const jwt = require('jsonwebtoken');
 const turf = require('@turf/turf');
 const pool = require('./db');
 
+async function sendPushNotification(pushToken, title, body) {
+  if (!pushToken || !pushToken.startsWith('ExponentPushToken')) return;
+  try {
+    await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ to: pushToken, sound: 'default', title, body }),
+    });
+  } catch (err) {
+    console.error('[PUSH] Erreur:', err.message);
+  }
+}
+
 const router = express.Router();
 
 function authMiddleware(req, res, next) {
@@ -105,9 +118,24 @@ router.post('/save', authMiddleware, async (req, res) => {
             await pool.query('UPDATE users SET points = points + $1 WHERE id = $2', [totalPoints, userId]);
             stolen.push({ territoryId: t.id, fromUserId: t.user_id, points: t.points, bonusPoints, ageDays, shielded });
             await pool.query(`UPDATE users SET weekly_stolen_count = weekly_stolen_count + 1 WHERE id = $1`, [userId]);
+
+            // Push notification à la victime
+            const victimRow = await pool.query('SELECT push_token FROM users WHERE id = $1', [t.user_id]);
+            const pushToken = victimRow.rows[0]?.push_token;
+            if (shielded) {
+              sendPushNotification(pushToken,
+                '🛡️ Attaque repoussée !',
+                `${attackerUsername} a attaqué ton territoire, mais ton bouclier a tout protégé !`
+              );
+            } else {
+              sendPushNotification(pushToken,
+                '⚔️ Territoire perdu !',
+                `${attackerUsername} a volé l'un de tes territoires (-${t.points} pts)`
+              );
+            }
+
             if (io) {
               const room = `user_${t.user_id}`;
-              const sockets = await io.in(room).fetchSockets();
               io.to(room).emit('territory_stolen', {
                 fromUsername: attackerUsername,
                 points: t.points,

@@ -122,6 +122,7 @@ async function start() {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vault_skin_ec VARCHAR(20) DEFAULT 'lime'`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vault_skin_er VARCHAR(20) DEFAULT 'aurora'`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vault_skin_ee VARCHAR(20) DEFAULT 'lightning'`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS push_token TEXT DEFAULT NULL`);
   // Générer des skins aléatoires pour les joueurs existants (colonnes à valeur par défaut)
   const existingUsers = await pool.query(`SELECT id FROM users WHERE vault_skin_tc = 'steel'`);
   for (const u of existingUsers.rows) {

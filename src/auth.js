@@ -3,6 +3,18 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pool = require('./db');
 
+function authMiddleware(req, res, next) {
+  const header = req.headers.authorization;
+  if (!header) return res.status(401).json({ error: 'Token manquant' });
+  try {
+    const token = header.replace('Bearer ', '');
+    req.user = jwt.verify(token, process.env.JWT_SECRET);
+    next();
+  } catch {
+    res.status(401).json({ error: 'Token invalide' });
+  }
+}
+
 const router = express.Router();
 
 router.post('/register', async (req, res) => {
@@ -63,6 +75,19 @@ router.post('/login', async (req, res) => {
     });
 
     res.json({ token, user: { id: user.id, username: user.username, email: user.email } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.post('/push-token', authMiddleware, async (req, res) => {
+  const { pushToken } = req.body;
+  const userId = req.user.userId;
+  if (!pushToken) return res.status(400).json({ error: 'Token manquant' });
+  try {
+    await pool.query('UPDATE users SET push_token = $1 WHERE id = $2', [pushToken, userId]);
+    res.json({ success: true });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
