@@ -118,7 +118,8 @@ router.post('/save', authMiddleware, async (req, res) => {
     await pool.query(
       `UPDATE users SET
         weekly_territory_points = weekly_territory_points + $1,
-        weekly_distance_m = weekly_distance_m + $2
+        weekly_distance_m = weekly_distance_m + $2,
+        monthly_points = monthly_points + $1
        WHERE id = $3`,
       [points, distance_m || 0, userId]
     );
