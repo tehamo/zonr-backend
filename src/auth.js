@@ -81,6 +81,21 @@ router.post('/login', async (req, res) => {
   }
 });
 
+// DELETE /auth/account — suppression définitive du compte
+router.delete('/account', authMiddleware, async (req, res) => {
+  const userId = req.user.userId;
+  try {
+    await pool.query('DELETE FROM messages    WHERE user_id = $1', [userId]);
+    await pool.query('DELETE FROM territories WHERE user_id = $1', [userId]);
+    await pool.query('DELETE FROM runs        WHERE user_id = $1', [userId]);
+    await pool.query('DELETE FROM users       WHERE id      = $1', [userId]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 router.post('/push-token', authMiddleware, async (req, res) => {
   const { pushToken } = req.body;
   const userId = req.user.userId;
