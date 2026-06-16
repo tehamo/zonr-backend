@@ -71,6 +71,7 @@ router.get('/progress', authMiddleware, async (req, res) => {
       [userId]
     );
     const u = result.rows[0];
+    if (!u) return res.status(404).json({ error: 'Utilisateur introuvable' });
     const PALIERS = buildPaliers(u);
     const vaultRevealed = u.vault_revealed || false;
 
