@@ -2,6 +2,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const turf = require('@turf/turf');
 const pool = require('./db');
+const { getMultiplierForPolygon } = require('./bonus-zones');
 
 async function sendPushNotification(pushToken, title, body) {
   if (!pushToken || !pushToken.startsWith('ExponentPushToken')) return;
@@ -50,6 +51,7 @@ router.post('/save', authMiddleware, async (req, res) => {
     );
 
     const stolen = [];
+    let bonusMultiplier = 1.0;
 
     if (coordinates && coordinates.length >= 3 && area_m2 > 0) {
       let finalCoords = coordinates;
@@ -82,13 +84,19 @@ router.post('/save', authMiddleware, async (req, res) => {
 
       finalCoords = merged.geometry.coordinates[0].map(c => ({ latitude: c[1], longitude: c[0] }));
 
+      // Bonus zone : multiplicateur si une zone active est dans le polygone
+      bonusMultiplier = await getMultiplierForPolygon(merged);
+      if (bonusMultiplier > 1.0) {
+        finalPoints = Math.round(finalPoints * bonusMultiplier);
+      }
+
       for (const id of toDelete) {
         await pool.query('DELETE FROM territories WHERE id = $1', [id]);
       }
 
       await pool.query(
-        'INSERT INTO territories (user_id, coordinates, area_m2, points) VALUES ($1, $2, $3, $4)',
-        [userId, JSON.stringify(finalCoords), finalArea, finalPoints]
+        'INSERT INTO territories (user_id, coordinates, area_m2, points, bonus_multiplier) VALUES ($1, $2, $3, $4, $5)',
+        [userId, JSON.stringify(finalCoords), finalArea, finalPoints, bonusMultiplier]
       );
 
       const newPoly = toTurfPolygon(finalCoords);
@@ -157,7 +165,7 @@ router.post('/save', authMiddleware, async (req, res) => {
       [points, distance_m || 0, userId]
     );
 
-    res.json({ success: true, runId: run.rows[0].id, stolen });
+    res.json({ success: true, runId: run.rows[0].id, stolen, bonusMultiplier: bonusMultiplier ?? 1.0 });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });

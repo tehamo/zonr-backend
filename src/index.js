@@ -12,6 +12,7 @@ const leaderboardRouter = require('./leaderboard');
 const shieldsRouter = require('./shields');
 const vaultRouter = require('./vault');
 const chatRouter = require('./chat');
+const { router: bonusZonesRouter } = require('./bonus-zones');
 const pool = require('./db');
 
 const app = express();
@@ -27,6 +28,7 @@ app.use('/leaderboard', leaderboardRouter);
 app.use('/shields', shieldsRouter);
 app.use('/vault', vaultRouter);
 app.use('/chat', chatRouter);
+app.use('/bonus-zones', bonusZonesRouter);
 
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
@@ -144,6 +146,18 @@ async function start() {
     )
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS messages_channel_idx ON messages(channel, created_at DESC)`);
+  await pool.query(`ALTER TABLE territories ADD COLUMN IF NOT EXISTS bonus_multiplier FLOAT DEFAULT 1.0`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS bonus_zones (
+      id SERIAL PRIMARY KEY,
+      latitude DOUBLE PRECISION NOT NULL,
+      longitude DOUBLE PRECISION NOT NULL,
+      radius_m INTEGER DEFAULT 150,
+      multiplier FLOAT DEFAULT 2.0,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL
+    )
+  `);
   // Générer des skins aléatoires pour les joueurs existants (colonnes à valeur par défaut)
   const existingUsers = await pool.query(`SELECT id FROM users WHERE vault_skin_tc = 'steel'`);
   for (const u of existingUsers.rows) {
